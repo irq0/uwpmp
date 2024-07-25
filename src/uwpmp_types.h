@@ -89,7 +89,7 @@ struct UwpmpCtx {
 struct UwpmpFunc {
   UwpmpCtx* ctx;
   std::string name;
-  std::uint32_t indent;
+  uint32_t indent;
   std::vector<std::shared_ptr<UwpmpFunc>> subfuncs;
   uint32_t count;
 
