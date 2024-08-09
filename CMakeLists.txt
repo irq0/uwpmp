@@ -12,13 +12,20 @@ if(NOT CMAKE_BUILD_TYPE)
         set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
 endif(NOT CMAKE_BUILD_TYPE)
 
-find_package(LibElf REQUIRED)
-list(APPEND CMAKE_REQUIRED_INCLUDES ${LIBELF_INCLUDE_DIRS})
+option(WITH_SYSTEM_ELFUTILS "Use system elfutils" ON)
+
+add_executable(${PROJECT_NAME} src/common.cc
+                               src/unwindpmp.cc
+                               src/uwpmp_types.cc
+                               src/tracer/uwpmp_tracer.cc
+                               src/tracer/unwind_tracer.cc
+                               src/tracer/dw_tracer.cc
+)
 
 include(ExternalProject)
 include(FetchContent)
 FetchContent_Declare(
-        cxxopts 
+        cxxopts
         GIT_REPOSITORY "https://github.com/jarro2783/cxxopts"
         GIT_TAG "v2.2.1"
 )
@@ -41,7 +48,7 @@ FetchContent_MakeAvailable(cxxopts fmt json)
 
 ExternalProject_Add(
 	libunwind
- GIT_REPOSITORY https://github.com/libunwind/libunwind.git 
+	GIT_REPOSITORY https://github.com/libunwind/libunwind.git
 	GIT_TAG "v1.5"
 	CONFIGURE_COMMAND
 	cd <SOURCE_DIR> && autoreconf -i && ./configure --disable-minidebuginfo --disable-shared --enable-static
@@ -55,46 +62,42 @@ set(libunwind_SOURCE_DIR ${SOURCE_DIR})
 set(libunwind_LIBS_DIR ${CMAKE_CURRENT_BINARY_DIR}/${libunwind_SOURCE_DIR}/src/.libs)
 set(libunwind_INCLUDE_DIR ${libunwind_SOURCE_DIR}/include)
 
-#ExternalProject_Add(
-#  elfutils
-#  GIT_REPOSITORY git://sourceware.org/git/elfutils.git
-#  GIT_TAG "elfutils-0.185"
-#  CONFIGURE_COMMAND
-#  cd <SOURCE_DIR> && autoreconf -i -f && ./configure --enable-maintainer-mode --disable-debuginfod
-#  BUILD_COMMAND
-#  cd <SOURCE_DIR> && make -s -j${BUILD_JOBS_NUM}
-#  INSTALL_COMMAND ""
-#  BUILD_IN_SOURCE TRUE
-#)
-#ExternalProject_Get_Property(elfutils SOURCE_DIR)
-#set(elfutils_SOURCE_DIR ${SOURCE_DIR})
-#set(elf_LIBS_DIR ${CMAKE_CURRENT_BINARY_DIR}/${elfutils_SOURCE_DIR}/libelf)
-#set(elf_INCLUDE_DIR ${elfutils_SOURCE_DIR}/libelf)
-#set(ebl_LIBS_DIR ${CMAKE_CURRENT_BINARY_DIR}/${elfutils_SOURCE_DIR}/libebl)
-#set(ebl_INCLUDE_DIR ${elfutils_SOURCE_DIR}/libebl)
-#set(dw_LIBS_DIR ${CMAKE_CURRENT_BINARY_DIR}/${elfutils_SOURCE_DIR}/libdw)
-#set(dw_INCLUDE_DIR ${elfutils_SOURCE_DIR}/libdw)
-#set(dwfl_LIBS_DIR ${CMAKE_CURRENT_BINARY_DIR}/${elfutils_SOURCE_DIR}/libdwfl)
-#set(dwfl_INCLUDE_DIR ${elfutils_SOURCE_DIR}/libdwfl)
-#target_link_libraries(${dwfl_LIBS_DIR}/libdwfl.a ${elf_LIBS_DIR}/libelf.a)
+if(WITH_SYSTEM_ELFUTILS)
+	find_package(LibElf REQUIRED)
+	list(APPEND CMAKE_REQUIRED_INCLUDES ${LIBELF_INCLUDE_DIRS})
+	target_link_libraries(${PROJECT_NAME} dw)
+else()
+	ExternalProject_Add(
+		elfutils
+		GIT_REPOSITORY git://sourceware.org/git/elfutils.git
+		GIT_TAG "elfutils-0.191"
+		PREFIX ${CMAKE_BINARY_DIR}/elfutils
+ 		CONFIGURE_COMMAND
+ 		/bin/sh -c "cd <SOURCE_DIR> && autoreconf -i -f && ./configure --prefix=<INSTALL_DIR> --enable-maintainer-mode --disable-debuginfod --enable-libdebuginfod"
+		INSTALL_COMMAND make install
+ 		BUILD_COMMAND
+ 		make -s -j${BUILD_JOBS_NUM}
+ 		BUILD_IN_SOURCE TRUE
+ 		LOG_CONFIGURE TRUE
+ 		UPDATE_DISCONNECTED TRUE
+	)
+	ExternalProject_Get_Property(elfutils install_dir)
+	add_dependencies(${PROJECT_NAME} elfutils)
+	set(elfutils_INSTALL_DIR ${install_dir})
+	set(elfutils_INCLUDE_DIR ${elfutils_INSTALL_DIR}/include)
+	target_include_directories(${PROJECT_NAME} PRIVATE ${elfutils_INCLUDE_DIR})
+	target_link_directories(${PROJECT_NAME} PRIVATE ${elfutils_INSTALL_DIR}/lib PRIVATE ${elfutils_INSTALL_DIR}/lib64)
+	target_link_libraries(${PROJECT_NAME} dw debuginfod)
+	## for static linking - beware lib vs lib64
+	# set(elfutils_LIBS_DIR ${elfutils_INSTALL_DIR}/${CMAKE_INSTALL_LIBDIR})
+	# target_link_libraries(${PROJECT_NAME} ${elfutils_LIBS_DIR}/libdw.a)
+	# target_link_libraries(${PROJECT_NAME} ${elfutils_LIBS_DIR}/libelf.a)
+	# target_link_libraries(${PROJECT_NAME} z lzma bz2 zstd)
+endif()
 
-add_executable(${PROJECT_NAME} src/common.cc
-                               src/unwindpmp.cc
-                               src/uwpmp_types.cc 
-                               src/tracer/uwpmp_tracer.cc
-                               src/tracer/unwind_tracer.cc
-                               src/tracer/dw_tracer.cc
-)
 target_include_directories(${PROJECT_NAME} PRIVATE src src/tracer ${libunwind_INCLUDE_DIR})
-#${ebl_INCLUDE_DIR} ${elf_INCLUDE_DIR} ${dw_INCLUDE_DIR} ${dwfl_INCLUDE_DIR})
-target_link_libraries(${PROJECT_NAME} stdc++ dw cxxopts nlohmann_json::nlohmann_json fmt)
+target_link_libraries(${PROJECT_NAME} stdc++ cxxopts nlohmann_json::nlohmann_json fmt)
 target_link_libraries(${PROJECT_NAME} ${libunwind_LIBS_DIR}/libunwind-ptrace.a)
 target_link_libraries(${PROJECT_NAME} ${libunwind_LIBS_DIR}/libunwind-x86_64.a)
 target_link_libraries(${PROJECT_NAME} ${libunwind_LIBS_DIR}/libunwind.a)
-
-
-#target_link_libraries(${PROJECT_NAME} ${elf_LIBS_DIR}/libelf.a ${dwfl_LIBS_DIR}/libdwfl.a)
-#target_link_libraries(${PROJECT_NAME} ${ebl_LIBS_DIR}/libebl.a)
-#target_link_libraries(${PROJECT_NAME} ${dwfl_LIBS_DIR}/libdwfl.a)
-#target_link_libraries(${PROJECT_NAME} ${dw_LIBS_DIR}/libdw.a)
 add_dependencies(${PROJECT_NAME} libunwind)
