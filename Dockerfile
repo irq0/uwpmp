@@ -27,16 +27,24 @@ WORKDIR /app
 COPY . .
 RUN mkdir build-docker && cd build-docker && cmake -DWITH_SYSTEM_ELFUTILS=OFF .. && make
 
-FROM almalinux:9
-RUN dnf -y update && \
-    dnf -y install \
-    libstdc++ \
-    && dnf clean all
+################################################################################
 
-COPY --from=builder /app/build-docker/unwindpmp /usr/local/bin/unwindpmp
+FROM almalinux:9-minimal
+
+RUN microdnf --nodocs -y update && \
+    microdnf --nodocs -y install \
+    libstdc++ \
+    libzstd \
+    zlib \
+    bzip2-libs \
+    xz-libs \
+    && microdnf clean all
+
+COPY --from=builder /app/build-docker/unwindpmp /usr/sbin/unwindpmp
+COPY --from=builder /app/build-docker/elfutils/lib/ /usr/lib/
+RUN ldconfig
 
 ENV DEBUGINFOD_URLS https://debuginfod.elfutils.org/
 ENV DEBUGINFOD_PROGRESS 1
-
-ENTRYPOINT ["/usr/local/bin/unwindpmp"]
-
+ENV DEBUGINFOD_VERBOSE 1
+ENTRYPOINT ["/usr/sbin/unwindpmp"]
