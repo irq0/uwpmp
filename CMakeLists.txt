@@ -50,13 +50,17 @@ ExternalProject_Add(
 	libunwind
 	GIT_REPOSITORY https://github.com/libunwind/libunwind.git
 	GIT_TAG "v1.5"
+	PREFIX ${CMAKE_BINARY_DIR}/libunwind
 	CONFIGURE_COMMAND
-	cd <SOURCE_DIR> && autoreconf -i && ./configure --disable-minidebuginfo --disable-shared --enable-static
+	/bin/sh -c "cd <SOURCE_DIR> && autoreconf -i && ./configure --prefix=<INSTALL_DIR> --disable-minidebuginfo --disable-shared --enable-static"
 	BUILD_COMMAND
 	cd <SOURCE_DIR> && make -s -j${BUILD_JOBS_NUM}
-	INSTALL_COMMAND ""
+	INSTALL_COMMAND make install
+	LOG_CONFIGURE TRUE
+	UPDATE_DISCONNECTED TRUE
 	BUILD_IN_SOURCE TRUE
 )
+add_dependencies(${PROJECT_NAME} libunwind)
 ExternalProject_Get_Property(libunwind SOURCE_DIR)
 set(libunwind_SOURCE_DIR ${SOURCE_DIR})
 set(libunwind_LIBS_DIR ${CMAKE_CURRENT_BINARY_DIR}/${libunwind_SOURCE_DIR}/src/.libs)
@@ -100,4 +104,3 @@ target_link_libraries(${PROJECT_NAME} stdc++ cxxopts nlohmann_json::nlohmann_jso
 target_link_libraries(${PROJECT_NAME} ${libunwind_LIBS_DIR}/libunwind-ptrace.a)
 target_link_libraries(${PROJECT_NAME} ${libunwind_LIBS_DIR}/libunwind-x86_64.a)
 target_link_libraries(${PROJECT_NAME} ${libunwind_LIBS_DIR}/libunwind.a)
-add_dependencies(${PROJECT_NAME} libunwind)
